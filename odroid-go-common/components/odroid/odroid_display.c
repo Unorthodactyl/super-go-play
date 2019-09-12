@@ -1000,6 +1000,9 @@ ili9341_write_frame_8bit(uint8_t* buffer, odroid_scanline *diff,
 
         if (line_width > 0) {
             int n_pixels = (line_width * x_scale) * (repeat * y_scale);
+			/* Can use that to check how much pixels gets diffed */
+			/* printf("n_pixels: %d\n", n_pixels); */
+
             if (n_pixels < POLLING_PIXEL_THRESHOLD) {
                 write_rect(buffer, palette, x_origin, y_origin,
                            left, y, line_width, repeat, i + left, stride,
@@ -1028,6 +1031,7 @@ ili9341_write_frame_8bit(uint8_t* buffer, odroid_scanline *diff,
 
             if (line_width) {
                 int n_pixels = (line_width * x_scale) * (repeat * y_scale);
+
                 if (n_pixels >= POLLING_PIXEL_THRESHOLD) {
                     write_rect(buffer, palette, x_origin, y_origin,
                                left, y, line_width, repeat, i + left, stride,

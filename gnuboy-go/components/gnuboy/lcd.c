@@ -758,7 +758,7 @@ inline static void updatepalette(int i)
 	short low = lcd.pal[i << 1];
 	short high = lcd.pal[(i << 1) | 1];
 
-	c = (low | (high << 8)) & 0x7fff;
+	c = (high | (low << 8)) & 0x7fff;
 
 	//bit 0-4 red
 	r = c & 0x1f;

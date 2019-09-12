@@ -44,6 +44,7 @@ extern int debug_trace;
 
 struct fb fb;
 struct pcm pcm;
+extern struct scan scan;
 
 bool bool_interlace = false;
 int interlace = 1;
@@ -117,32 +118,36 @@ void run_to_vblank()
   }
 
   /* VBLANK BEGIN */
-  
-  //store buffer data
+
+  uint8_t *old_buffer = update->buffer;
+  odroid_scanline *old_diff = update->diff;
+
+  // Swap updates
+  update = (update == &update1) ? &update2 : &update1;
+
   update->buffer = framebuffer;
   update->stride = fb.pitch;
-  
-  struct update_meta *old_update = (update == &update1) ? &update2 : &update1;
 
-  if ((frame % 1) == 0)
-  {
-	  // Diff buffer and send it to video task
-	  if (bool_interlace) {
-		  // TODO: NULL needs to become a plaette
-		  odroid_buffer_diff_interlaced(update->buffer, old_update, NULL, NULL,
-				  GAMEBOY_WIDTH, GAMEBOY_HEIGHT, update->stride, PIXEL_MASK, 0, interlace,
-				  update->diff, old_update->diff);
-	  } else {
-		  odroid_buffer_diff(update->buffer, old_update, NULL, NULL, GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
-				  update->stride, PIXEL_MASK, 0, update->diff);
-	  }
-      xQueueSend(vidQueue, &update, portMAX_DELAY);
+  // Diff framebuffers and send the update to video task
+  // TODO: Somehow determine when to interlace properly
+  if (bool_interlace) { 
+	  // TODO: NULL needs to become a plaette, not sure how to diff them yet
+	  //       At the moment the internal palette is used directly in ili9341_write_frame_8bit
+	  odroid_buffer_diff_interlaced(update->buffer, old_buffer, NULL, NULL,
+			  GAMEBOY_WIDTH, GAMEBOY_HEIGHT, update->stride, PIXEL_MASK, 0, interlace,
+			  update->diff, old_diff);
+  } else {
+	  odroid_buffer_diff(update->buffer, old_buffer, NULL, NULL,
+			  GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
+			  update->stride, PIXEL_MASK, 0, update->diff);
 
-      // swap buffers
-      currentBuffer = currentBuffer ? 0 : 1;
-      framebuffer = displayBuffer[currentBuffer];
-      fb.ptr = framebuffer;
   }
+  xQueueSend(vidQueue, &update, portMAX_DELAY);
+
+  // Swap framebuffers
+  currentBuffer = currentBuffer ? 0 : 1;
+  framebuffer = displayBuffer[currentBuffer];
+  fb.ptr = framebuffer;
 
   rtc_tick();
 
@@ -183,15 +188,8 @@ volatile bool videoTaskIsRunning = false;
 bool scaling_enabled = true;
 bool previous_scale_enabled = true;
 
-static uint16_t palette[64] = { 0xFFFF, 0xb6b5, 0x2c63, 0x0, 0, };
-
 void videoTask(void *arg)
 {
-
-  // TODO: Switchable pallettes
-  // int32_t GB_Palette = odroid_settings_GBPalette_get();
-  // int16_t myPalette = (int16_t) GB_Palette;
-
   esp_err_t ret;
 
   videoTaskIsRunning = true;
@@ -201,7 +199,8 @@ void videoTask(void *arg)
   {
         xQueuePeek(vidQueue, &update, portMAX_DELAY);
 
-        if (!update) break;
+        if (update == 1)
+			break;
 		
 		bool scale_changed = (previous_scale_enabled != scaling_enabled);
 
@@ -209,18 +208,18 @@ void videoTask(void *arg)
         {
             ili9341_blank_screen();
             previous_scale_enabled = scaling_enabled;
-            // TODO: Uncommenting this mutex error, inestigate why
-			//printf("Scale enabled: %d\n", scale_changed);
             if (scaling_enabled) {
-				// TODO: Fix this
-                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 10.f/9.f);
+				// TODO: Scaling looks kinda ugly compared to old gnuboy, not sure how to fix that
+                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.f);
             } else {
                 odroid_display_reset_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT);
             }
         }
 		
-		// TODO: Need to use propper pallette here, it has to work together with palettes in lcd.c
-		ili9341_write_frame_8bit(update->buffer, scale_changed ? NULL : update->diff, GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, palette);
+		// TODO: For palette diffing scan.pal2 probably needs to get changed
+		//       to a buffered thing. Maybe change update_meta to contain a the palette?
+		ili9341_write_frame_8bit(update->buffer, scale_changed ? NULL : update->diff,
+				GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, scan.pal2);
 
         odroid_input_battery_level_read(&battery_state);
 
@@ -405,9 +404,8 @@ static void PowerDown()
     // Stop tasks
     printf("PowerDown: stopping tasks.\n");
 
-    xQueueSend(vidQueue, &update, portMAX_DELAY);
+	xQueueSend(vidQueue, &param, portMAX_DELAY);
     while (videoTaskIsRunning) {}
-
 
     // state
     printf("PowerDown: Saving state.\n");
@@ -589,7 +587,7 @@ void app_main(void)
     vidQueue = xQueueCreate(1, sizeof(uint16_t*));
     audioQueue = xQueueCreate(1, sizeof(uint16_t*));
 
-    xTaskCreatePinnedToCore(&videoTask, "videoTask", 1024, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(&videoTask, "videoTask", 2048, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(&audioTask, "audioTask", 2048, NULL, 5, NULL, 1); //768
 
     //debug_trace = 1;
