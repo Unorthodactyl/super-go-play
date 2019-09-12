@@ -30,8 +30,6 @@
 
 #include <string.h>
 
-//no #include <bitmap.h>
-
 #include "hourglass_empty_black_48dp.h"
 
 #include "../components/odroid/odroid_settings.h"
@@ -195,7 +193,6 @@ void videoTask(void *arg)
   videoTaskIsRunning = true;
   struct update_meta *update = NULL;
 
-  //uint16_t* param;
   while(1)
   {
         xQueuePeek(vidQueue, &update, portMAX_DELAY);
@@ -221,7 +218,6 @@ void videoTask(void *arg)
                                  update->stride, PIXEL_MASK,
                                  myPalette);
 								 
-        //ili9341_write_frame_gb(param, scaling_enabled);
         odroid_input_battery_level_read(&battery_state);
 
         xQueueReceive(vidQueue, &update, portMAX_DELAY);
