@@ -212,12 +212,8 @@ void videoTask(void *arg)
             }
         }
 		
-        ili9341_write_frame_8bit(update->buffer,
-                                 scale_changed ? NULL : update->diff,
-                                 GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
-                                 update->stride, PIXEL_MASK,
-                                 myPalette);
-								 
+        ili9341_write_frame_gb(update, scaling_enabled);
+
         odroid_input_battery_level_read(&battery_state);
 
         xQueueReceive(vidQueue, &update, portMAX_DELAY);
@@ -559,8 +555,8 @@ void app_main(void)
     odroid_audio_init(odroid_settings_AudioSink_get(), AUDIO_SAMPLE_RATE);
 
     // Allocate display buffers
-    displayBuffer[0] = heap_caps_malloc(GAMEBOY_WIDTH * GAMEBOY_HEIGHT, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
-    displayBuffer[1] = heap_caps_malloc(GAMEBOY_WIDTH * GAMEBOY_HEIGHT, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
+    displayBuffer[0] = heap_caps_malloc(GAMEBOY_HEIGHT * GAMEBOY_WIDTH, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
+    displayBuffer[1] = heap_caps_malloc(GAMEBOY_HEIGHT * GAMEBOY_WIDTH, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
 
     if (displayBuffer[0] == 0 || displayBuffer[1] == 0)
         abort();
@@ -569,7 +565,7 @@ void app_main(void)
 
     for (int i = 0; i < 2; ++i)
     {
-        memset(displayBuffer[i], 0, 160 * 144 * 2);
+        memset(displayBuffer[i], 0, GAMEBOY_HEIGHT * GAMEBOY_WIDTH);
     }
 
     printf("app_main: displayBuffer[0]=%p, [1]=%p\n", displayBuffer[0], displayBuffer[1]);
@@ -772,7 +768,7 @@ void app_main(void)
           float seconds = totalElapsedTime / (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000.0f); // 240000000.0f; // (240Mhz)
           float fps = actualFrameCount / seconds;
 		  
-		  if (fps < 50.0f)
+		  if (fps < 50.f)
 			  bool_interlace = true;
 		  else
 			  bool_interlace = false;
