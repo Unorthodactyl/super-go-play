@@ -694,14 +694,14 @@ void IRAM_ATTR lcd_refreshline()
 	WT = (L - WY) >> 3;
 	WV = (L - WY) & 7;
 
-	if ((frame % 2) == 0)
+	if ((frame % 1) == 0)
 	{
 		if (!(R_LCDC & 0x80))
 		{
 			if (!lastLcdDisabled)
 			{
-				memset(displayBuffer[0], 0xff, 144 * 160 * 2);
-				memset(displayBuffer[1], 0xff, 144 * 160 * 2);
+				memset(displayBuffer[0], 0xff, 144 * 160);
+				memset(displayBuffer[1], 0xff, 144 * 160);
 
 				lastLcdDisabled = 1;
 			}
@@ -736,10 +736,10 @@ void IRAM_ATTR lcd_refreshline()
 		dest = vdest;
 
 		int cnt = 160;
-		un16* dst = (un16*)dest;
+		/* un16* dst = (un16*)dest; */
 		byte* src = BUF;
 
-		while (cnt--) *(dst++) = PAL2[*(src++)];
+		memcpy(dest, src, cnt);
 	}
 
 	vdest += fb.pitch;
@@ -803,7 +803,7 @@ void IRAM_ATTR pal_write_dmg(int i, int mapnum, byte d)
 		pal_write(i+j+1, c >> 8);
 	}
 
-	//printf("pal_write_dmg: i=%d, d=0x%x\n", i , d);
+	printf("pal_write_dmg: i=%d, d=0x%x\n", i , d);
 }
 
 inline void vram_write(int a, byte b)

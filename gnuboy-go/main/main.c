@@ -49,9 +49,9 @@ bool bool_interlace = false;
 int interlace = 1;
 
 uint16_t* displayBuffer[2]; //= { fb0, fb0 }; //[160 * 144];
-uint8_t currentBuffer;
+uint8_t currentBuffer; // index for display_buffer
+uint16_t* framebuffer; // pointer to currentBuffer
 
-uint16_t* framebuffer;
 int frame = 0;
 uint elapsedTime = 0;
 
@@ -99,7 +99,6 @@ int pcm_submit()
 
 int BatteryPercent = 100;
 
-
 void run_to_vblank()
 {
   /* FRAME BEGIN */
@@ -125,22 +124,23 @@ void run_to_vblank()
   
   struct update_meta *old_update = (update == &update1) ? &update2 : &update1;
 
-  //vid_end();
   if ((frame % 1) == 0)
   {
-	  //diff buffer
-	  if (bool_interlace){
-		  odroid_buffer_diff_interlaced(update->buffer, old_update, NULL, NULL, GAMEBOY_WIDTH, GAMEBOY_HEIGHT, update->stride, PIXEL_MASK, 0, interlace, update->diff, old_update->diff);
+	  // Diff buffer and send it to video task
+	  if (bool_interlace) {
+		  // TODO: NULL needs to become a plaette
+		  odroid_buffer_diff_interlaced(update->buffer, old_update, NULL, NULL,
+				  GAMEBOY_WIDTH, GAMEBOY_HEIGHT, update->stride, PIXEL_MASK, 0, interlace,
+				  update->diff, old_update->diff);
 	  } else {
-		  odroid_buffer_diff(update->buffer, old_update, NULL, NULL, GAMEBOY_WIDTH, GAMEBOY_HEIGHT, update->stride, PIXEL_MASK, 0, update->diff);
+		  odroid_buffer_diff(update->buffer, old_update, NULL, NULL, GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
+				  update->stride, PIXEL_MASK, 0, update->diff);
 	  }
-	  
       xQueueSend(vidQueue, &update, portMAX_DELAY);
 
       // swap buffers
       currentBuffer = currentBuffer ? 0 : 1;
       framebuffer = displayBuffer[currentBuffer];
-
       fb.ptr = framebuffer;
   }
 
@@ -183,11 +183,15 @@ volatile bool videoTaskIsRunning = false;
 bool scaling_enabled = true;
 bool previous_scale_enabled = true;
 
+static uint16_t palette[64] = { 0xFFFF, 0xb6b5, 0x2c63, 0x0, 0, };
+
 void videoTask(void *arg)
 {
-	
-  int32_t GB_Palette = odroid_settings_GBPalette_get();
-  int16_t myPalette = (int16_t) GB_Palette;
+
+  // TODO: Switchable pallettes
+  // int32_t GB_Palette = odroid_settings_GBPalette_get();
+  // int16_t myPalette = (int16_t) GB_Palette;
+
   esp_err_t ret;
 
   videoTaskIsRunning = true;
@@ -205,19 +209,19 @@ void videoTask(void *arg)
         {
             ili9341_blank_screen();
             previous_scale_enabled = scaling_enabled;
+            // TODO: Uncommenting this mutex error, inestigate why
+			//printf("Scale enabled: %d\n", scale_changed);
             if (scaling_enabled) {
-                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.f);
+				// TODO: Fix this
+                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 10.f/9.f);
             } else {
                 odroid_display_reset_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT);
             }
         }
 		
-        ili9341_write_frame_8bit(update->buffer,
-                                 scale_changed ? NULL : update->diff,
-                                 GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
-                                 update->stride, PIXEL_MASK,
-                                 myPalette);
-								 
+		// TODO: Need to use propper pallette here, it has to work together with palettes in lcd.c
+		ili9341_write_frame_8bit(update->buffer, scale_changed ? NULL : update->diff, GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, palette);
+
         odroid_input_battery_level_read(&battery_state);
 
         xQueueReceive(vidQueue, &update, portMAX_DELAY);
@@ -588,7 +592,6 @@ void app_main(void)
     xTaskCreatePinnedToCore(&videoTask, "videoTask", 1024, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(&audioTask, "audioTask", 2048, NULL, 5, NULL, 1); //768
 
-
     //debug_trace = 1;
 
     emu_reset();
@@ -604,7 +607,7 @@ void app_main(void)
     memset(&fb, 0, sizeof(fb));
     fb.w = 160;
   	fb.h = 144;
-  	fb.pelsize = 2;
+  	fb.pelsize = 1;
   	fb.pitch = fb.w * fb.pelsize;
   	fb.indexed = 0;
   	fb.ptr = framebuffer;
@@ -772,11 +775,11 @@ void app_main(void)
           float seconds = totalElapsedTime / (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000.0f); // 240000000.0f; // (240Mhz)
           float fps = actualFrameCount / seconds;
 		  
-		  if (fps < 50.f)
-			  bool_interlace = true;
-		  else
-			  bool_interlace = false;
-
+//		  if (fps < 50.f)
+//			  bool_interlace = true;
+//		  else
+//			  bool_interlace = false;
+//
           printf("HEAP:0x%x, FPS:%f, BATTERY:%d [%d]\n", esp_get_free_heap_size(), fps, battery_state.millivolts, battery_state.percentage);
 
           actualFrameCount = 0;
