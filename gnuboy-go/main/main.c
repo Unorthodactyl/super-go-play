@@ -30,6 +30,8 @@
 
 #include <string.h>
 
+//no #include <bitmap.h>
+
 #include "hourglass_empty_black_48dp.h"
 
 #include "../components/odroid/odroid_settings.h"
@@ -45,6 +47,8 @@ extern int debug_trace;
 struct fb fb;
 struct pcm pcm;
 
+bool bool_interlace = false;
+int interlace = 1;
 
 uint16_t* displayBuffer[2]; //= { fb0, fb0 }; //[160 * 144];
 uint8_t currentBuffer;
@@ -64,6 +68,18 @@ const char* StateFileName = "/storage/gnuboy.sav";
 
 #define GAMEBOY_WIDTH (160)
 #define GAMEBOY_HEIGHT (144)
+
+#define PIXEL_MASK 0x3F
+
+struct update_meta {
+	odroid_scanline diff[GAMEBOY_HEIGHT];
+	uint8_t *buffer;
+	int stride;
+};	
+
+static struct update_meta update1 = {0,};
+static struct update_meta update2 = {0,};
+static struct update_meta *update = &update2;
 
 #define AUDIO_SAMPLE_RATE (32000)
 
@@ -104,11 +120,24 @@ void run_to_vblank()
   }
 
   /* VBLANK BEGIN */
+  
+  //store buffer data
+  update->buffer = framebuffer;
+  update->stride = fb.pitch;
+  
+  struct update_meta *old_update = (update == &update1) ? &update2 : &update1;
 
   //vid_end();
-  if ((frame % 2) == 0)
+  if ((frame % 1) == 0)
   {
-      xQueueSend(vidQueue, &framebuffer, portMAX_DELAY);
+	  //diff buffer
+	  if (bool_interlace){
+		  odroid_buffer_diff_interlaced(update->buffer, old_update, NULL, NULL, GAMEBOY_WIDTH, GAMEBOY_HEIGHT, update->stride, PIXEL_MASK, 0, interlace, update->diff, old_update->diff);
+	  } else {
+		  odroid_buffer_diff(update->buffer, old_update, NULL, NULL, GAMEBOY_WIDTH, GAMEBOY_HEIGHT, update->stride, PIXEL_MASK, 0, update->diff);
+	  }
+	  
+      xQueueSend(vidQueue, &update, portMAX_DELAY);
 
       // swap buffers
       currentBuffer = currentBuffer ? 0 : 1;
@@ -158,29 +187,44 @@ bool previous_scale_enabled = true;
 
 void videoTask(void *arg)
 {
+	
+  int32_t GB_Palette = odroid_settings_GBPalette_get();
+  int16_t myPalette = (int16_t) GB_Palette;
   esp_err_t ret;
 
   videoTaskIsRunning = true;
+  struct update_meta *update = NULL;
 
-  uint16_t* param;
+  //uint16_t* param;
   while(1)
   {
-        xQueuePeek(vidQueue, &param, portMAX_DELAY);
+        xQueuePeek(vidQueue, &update, portMAX_DELAY);
 
-        if (param == 1)
-            break;
+        if (!update) break;
+		
+		bool scale_changed = (previous_scale_enabled != scaling_enabled);
 
-        if (previous_scale_enabled != scaling_enabled)
+        if (scale_changed)
         {
-            // Clear display
-            ili9341_write_frame_gb(NULL, true);
+            ili9341_blank_screen();
             previous_scale_enabled = scaling_enabled;
+            if (scaling_enabled) {
+                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.f);
+            } else {
+                odroid_display_reset_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT);
+            }
         }
-
-        ili9341_write_frame_gb(param, scaling_enabled);
+		
+        ili9341_write_frame_8bit(update->buffer,
+                                 scale_changed ? NULL : update->diff,
+                                 GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
+                                 update->stride, PIXEL_MASK,
+                                 myPalette);
+								 
+        //ili9341_write_frame_gb(param, scaling_enabled);
         odroid_input_battery_level_read(&battery_state);
 
-        xQueueReceive(vidQueue, &param, portMAX_DELAY);
+        xQueueReceive(vidQueue, &update, portMAX_DELAY);
     }
 
 
@@ -361,7 +405,7 @@ static void PowerDown()
     // Stop tasks
     printf("PowerDown: stopping tasks.\n");
 
-    xQueueSend(vidQueue, &param, portMAX_DELAY);
+    xQueueSend(vidQueue, &update, portMAX_DELAY);
     while (videoTaskIsRunning) {}
 
 
@@ -519,8 +563,8 @@ void app_main(void)
     odroid_audio_init(odroid_settings_AudioSink_get(), AUDIO_SAMPLE_RATE);
 
     // Allocate display buffers
-    displayBuffer[0] = heap_caps_malloc(160 * 144 * 2, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
-    displayBuffer[1] = heap_caps_malloc(160 * 144 * 2, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
+    displayBuffer[0] = heap_caps_malloc(GAMEBOY_WIDTH * GAMEBOY_HEIGHT, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
+    displayBuffer[1] = heap_caps_malloc(GAMEBOY_WIDTH * GAMEBOY_HEIGHT, MALLOC_CAP_8BIT | MALLOC_CAP_DMA);
 
     if (displayBuffer[0] == 0 || displayBuffer[1] == 0)
         abort();
@@ -731,6 +775,11 @@ void app_main(void)
         {
           float seconds = totalElapsedTime / (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000.0f); // 240000000.0f; // (240Mhz)
           float fps = actualFrameCount / seconds;
+		  
+		  if (fps < 50.0f)
+			  bool_interlace = true;
+		  else
+			  bool_interlace = false;
 
           printf("HEAP:0x%x, FPS:%f, BATTERY:%d [%d]\n", esp_get_free_heap_size(), fps, battery_state.millivolts, battery_state.percentage);
 
