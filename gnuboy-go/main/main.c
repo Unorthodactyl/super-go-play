@@ -569,7 +569,7 @@ void app_main(void)
 
     for (int i = 0; i < 2; ++i)
     {
-        memset(displayBuffer[i], 0, 160 * 144 * 2);
+        memset(displayBuffer[i], 0, GAMEBOY_WIDTH * GAMEBOY_HEIGHT);
     }
 
     printf("app_main: displayBuffer[0]=%p, [1]=%p\n", displayBuffer[0], displayBuffer[1]);
@@ -772,7 +772,7 @@ void app_main(void)
           float seconds = totalElapsedTime / (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000.0f); // 240000000.0f; // (240Mhz)
           float fps = actualFrameCount / seconds;
 		  
-		  if (fps < 50.0f)
+		  if (fps < 50.f)
 			  bool_interlace = true;
 		  else
 			  bool_interlace = false;
