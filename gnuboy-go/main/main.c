@@ -132,7 +132,7 @@ void run_to_vblank()
 
   update->buffer = framebuffer;
   update->stride = fb.pitch;
-  update->palette = palette;
+  update->palette = scan.pal2;
 
   // Diff framebuffers and send the update to video task
   // TODO: Somehow determine when to interlace properly
