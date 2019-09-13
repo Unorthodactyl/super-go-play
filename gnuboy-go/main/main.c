@@ -53,6 +53,9 @@ uint16_t* displayBuffer[2]; //= { fb0, fb0 }; //[160 * 144];
 uint8_t currentBuffer; // index for display_buffer
 uint16_t* framebuffer; // pointer to currentBuffer
 
+uint16_t* palette = scan.pal2;
+uint16_t* old_palette = NULL;
+
 int frame = 0;
 uint elapsedTime = 0;
 
@@ -74,6 +77,7 @@ struct update_meta {
 	odroid_scanline diff[GAMEBOY_HEIGHT];
 	uint8_t *buffer;
 	int stride;
+    uint16_t* palette;
 };	
 
 static struct update_meta update1 = {0,};
@@ -121,23 +125,25 @@ void run_to_vblank()
 
   uint8_t *old_buffer = update->buffer;
   odroid_scanline *old_diff = update->diff;
+  old_palette = update->palette;
 
   // Swap updates
   update = (update == &update1) ? &update2 : &update1;
 
   update->buffer = framebuffer;
   update->stride = fb.pitch;
+  update->palette = palette;
 
   // Diff framebuffers and send the update to video task
   // TODO: Somehow determine when to interlace properly
   if (bool_interlace) { 
 	  // TODO: NULL needs to become a plaette, not sure how to diff them yet
 	  //       At the moment the internal palette is used directly in ili9341_write_frame_8bit
-	  odroid_buffer_diff_interlaced(update->buffer, old_buffer, NULL, NULL,
+	  odroid_buffer_diff_interlaced(update->buffer, old_buffer, update->palette, old_palette,
 			  GAMEBOY_WIDTH, GAMEBOY_HEIGHT, update->stride, PIXEL_MASK, 0, interlace,
 			  update->diff, old_diff);
   } else {
-	  odroid_buffer_diff(update->buffer, old_buffer, NULL, NULL,
+	  odroid_buffer_diff(update->buffer, old_buffer, update->palette, old_palette,
 			  GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
 			  update->stride, PIXEL_MASK, 0, update->diff);
 
@@ -219,7 +225,7 @@ void videoTask(void *arg)
 		// TODO: For palette diffing scan.pal2 probably needs to get changed
 		//       to a buffered thing. Maybe change update_meta to contain a the palette?
 		ili9341_write_frame_8bit(update->buffer, scale_changed ? NULL : update->diff,
-				GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, scan.pal2);
+				GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, update->palette);
 
         odroid_input_battery_level_read(&battery_state);
 
@@ -555,7 +561,7 @@ void app_main(void)
     loader_init(NULL);
 
     // Clear display
-    ili9341_write_frame_gb(NULL, true);
+    ili9341_blank_screen();
 
     // Audio hardware
     odroid_audio_init(odroid_settings_AudioSink_get(), AUDIO_SAMPLE_RATE);
@@ -611,6 +617,9 @@ void app_main(void)
   	fb.ptr = framebuffer;
   	fb.enabled = 1;
   	fb.dirty = 0;
+    
+    //load initial palette
+    update->palette = scan.pal2;
 
 
     // Note: Magic number obtained by adjusting until audio buffer overflows stop.
