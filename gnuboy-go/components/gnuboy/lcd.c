@@ -72,6 +72,9 @@ static int palettes[8][4] = {GB_DEFAULT_PALETTE,
 static int current_palette = 1;
 static int nr_of_palettes = 8;
 
+// Imorted from main.c
+extern int update_palette_dirty;
+extern int skipFrame;
 					
 static int sprsort = 1;
 static int sprdebug = 0;
@@ -694,7 +697,7 @@ void IRAM_ATTR lcd_refreshline()
 	WT = (L - WY) >> 3;
 	WV = (L - WY) & 7;
 
-	if ((frame % 1) == 0)
+	if (!skipFrame)
 	{
 		if (!(R_LCDC & 0x80))
 		{
@@ -710,7 +713,6 @@ void IRAM_ATTR lcd_refreshline()
 		}
 
 		lastLcdDisabled = 0;
-
 
 		spr_enum();
 		tilebuf();
@@ -758,7 +760,7 @@ inline static void updatepalette(int i)
 	short low = lcd.pal[i << 1];
 	short high = lcd.pal[(i << 1) | 1];
 
-	c = (high | (low << 8)) & 0x7fff;
+	c = (low | (high << 8)) & 0x7fff;
 
 	//bit 0-4 red
 	r = c & 0x1f;
@@ -803,7 +805,7 @@ void IRAM_ATTR pal_write_dmg(int i, int mapnum, byte d)
 		pal_write(i+j+1, c >> 8);
 	}
 
-	printf("pal_write_dmg: i=%d, d=0x%x\n", i , d);
+	/* printf("pal_write_dmg: i=%d, d=0x%x\n", i , d); */
 }
 
 inline void vram_write(int a, byte b)
@@ -874,6 +876,7 @@ void pal_dirty()
 			updatepalette(i);
 		}
 	}
+	update_palette_dirty = 1;
 }
 
 void lcd_reset()

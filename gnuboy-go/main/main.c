@@ -46,8 +46,8 @@ struct fb fb;
 struct pcm pcm;
 extern struct scan scan;
 
-bool bool_interlace = false;
-int interlace = 1;
+int interlace = 0;
+int skipFrame = 0;
 
 uint16_t* displayBuffer[2]; //= { fb0, fb0 }; //[160 * 144];
 uint8_t currentBuffer; // index for display_buffer
@@ -72,6 +72,7 @@ const char* StateFileName = "/storage/gnuboy.sav";
 
 struct update_meta {
 	odroid_scanline diff[GAMEBOY_HEIGHT];
+	bool skip_frame;
 	uint8_t *buffer;
 	int stride;
 };	
@@ -79,6 +80,7 @@ struct update_meta {
 static struct update_meta update1 = {0,};
 static struct update_meta update2 = {0,};
 static struct update_meta *update = &update2;
+int update_palette_dirty = true;
 
 #define AUDIO_SAMPLE_RATE (32000)
 
@@ -92,8 +94,7 @@ float Volume = 1.0f;
 
 int pcm_submit()
 {
-    odroid_audio_submit(currentAudioBufferPtr, currentAudioSampleCount >> 1);
-
+    odroid_audio_submit(currentAudioBufferPtr, currentAudioSampleCount / 2);
     return 1;
 }
 
@@ -118,39 +119,30 @@ void run_to_vblank()
   }
 
   /* VBLANK BEGIN */
+  if (!skipFrame) {
+	  uint8_t *old_buffer = update->buffer;
+	  odroid_scanline *old_diff = update->diff;
 
-  uint8_t *old_buffer = update->buffer;
-  odroid_scanline *old_diff = update->diff;
+	  // Swap updates
+	  update = (update == &update1) ? &update2 : &update1;
 
-  // Swap updates
-  update = (update == &update1) ? &update2 : &update1;
+	  update->buffer = framebuffer;
+	  update->stride = fb.pitch;
 
-  update->buffer = framebuffer;
-  update->stride = fb.pitch;
-
-  // Diff framebuffers and send the update to video task
-  // TODO: Somehow determine when to interlace properly
-  if (bool_interlace) { 
-	  // TODO: NULL needs to become a plaette, not sure how to diff them yet
-	  //       At the moment the internal palette is used directly in ili9341_write_frame_8bit
-	  odroid_buffer_diff_interlaced(update->buffer, old_buffer, NULL, NULL,
-			  GAMEBOY_WIDTH, GAMEBOY_HEIGHT, update->stride, PIXEL_MASK, 0, interlace,
-			  update->diff, old_diff);
-  } else {
+	  // Diff framebuffers and send the update to video task
+	  // TODO: Somehow determine when to interlace properly
 	  odroid_buffer_diff(update->buffer, old_buffer, NULL, NULL,
 			  GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
 			  update->stride, PIXEL_MASK, 0, update->diff);
+	  xQueueSend(vidQueue, &update, portMAX_DELAY);
 
+	  // Swap framebuffers
+	  currentBuffer = currentBuffer ? 0 : 1;
+	  framebuffer = displayBuffer[currentBuffer];
+	  fb.ptr = framebuffer;
   }
-  xQueueSend(vidQueue, &update, portMAX_DELAY);
-
-  // Swap framebuffers
-  currentBuffer = currentBuffer ? 0 : 1;
-  framebuffer = displayBuffer[currentBuffer];
-  fb.ptr = framebuffer;
 
   rtc_tick();
-
   sound_mix();
 
   //if (pcm.pos > 100)
@@ -218,7 +210,12 @@ void videoTask(void *arg)
 		
 		// TODO: For palette diffing scan.pal2 probably needs to get changed
 		//       to a buffered thing. Maybe change update_meta to contain a the palette?
-		ili9341_write_frame_8bit(update->buffer, scale_changed ? NULL : update->diff,
+		bool full_update = scale_changed;
+		if (update_palette_dirty) {
+			update_palette_dirty = 0;
+			full_update = true;
+		}
+		ili9341_write_frame_8bit(update->buffer, full_update || update->skip_frame ? NULL : update->diff,
 				GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, scan.pal2);
 
         odroid_input_battery_level_read(&battery_state);
@@ -229,9 +226,7 @@ void videoTask(void *arg)
 
     // Draw hourglass
     odroid_display_lock();
-
     odroid_display_show_hourglass();
-
     odroid_display_unlock();
 
 
@@ -388,38 +383,6 @@ static void LoadState(const char* cartName)
 
 	pal_set(odroid_settings_GBPalette_get());
     Volume = odroid_settings_Volume_get();
-}
-
-static void PowerDown()
-{
-    uint16_t* param = 1;
-
-    // Clear audio to prevent studdering
-    printf("PowerDown: stopping audio.\n");
-
-    xQueueSend(audioQueue, &param, portMAX_DELAY);
-    while (AudioTaskIsRunning) {}
-
-
-    // Stop tasks
-    printf("PowerDown: stopping tasks.\n");
-
-	xQueueSend(vidQueue, &param, portMAX_DELAY);
-    while (videoTaskIsRunning) {}
-
-    // state
-    printf("PowerDown: Saving state.\n");
-    SaveState();
-
-    // LCD
-    printf("PowerDown: Powerdown LCD panel.\n");
-    ili9341_poweroff();
-
-    odroid_system_sleep();
-
-
-    // Should never reach here
-    abort();
 }
 
 static void DoMenuHome()
@@ -588,7 +551,7 @@ void app_main(void)
     audioQueue = xQueueCreate(1, sizeof(uint16_t*));
 
     xTaskCreatePinnedToCore(&videoTask, "videoTask", 2048, NULL, 5, NULL, 1);
-    xTaskCreatePinnedToCore(&audioTask, "audioTask", 2048, NULL, 5, NULL, 1); //768
+    xTaskCreatePinnedToCore(&audioTask, "audioTask", 2048, NULL, 5, NULL, 0); //768
 
     //debug_trace = 1;
 
@@ -647,7 +610,7 @@ void app_main(void)
     uint stopTime;
     uint totalElapsedTime = 0;
     uint actualFrameCount = 0;
-    odroid_gamepad_state lastJoysticState;
+    odroid_gamepad_state lastJoysticState, joystick;
 
     ushort menuButtonFrameCount = 0;
     bool ignoreMenuButton = lastJoysticState.values[ODROID_INPUT_MENU];
@@ -662,123 +625,135 @@ void app_main(void)
     scaling_enabled = odroid_settings_ScaleDisabled_get(ODROID_SCALE_DISABLE_GB) ? false : true;
 
     odroid_input_gamepad_read(&lastJoysticState);
+	char* statsbuf = calloc(1, 1024);
 
     while (true)
     {
-        odroid_gamepad_state joystick;
-        odroid_input_gamepad_read(&joystick);
+		// Handle input
+		{
+			odroid_input_gamepad_read(&joystick);
 
-        if (ignoreMenuButton)
-        {
-            ignoreMenuButton = lastJoysticState.values[ODROID_INPUT_MENU];
-        }
+			if (ignoreMenuButton)
+			{
+				ignoreMenuButton = lastJoysticState.values[ODROID_INPUT_MENU];
+			}
 
-        if (!ignoreMenuButton && lastJoysticState.values[ODROID_INPUT_MENU] && joystick.values[ODROID_INPUT_MENU])
-        {
-            ++menuButtonFrameCount;
-        }
-        else
-        {
-            menuButtonFrameCount = 0;
-        }
+			if (!ignoreMenuButton && lastJoysticState.values[ODROID_INPUT_MENU] && joystick.values[ODROID_INPUT_MENU])
+			{
+				++menuButtonFrameCount;
+			}
+			else
+			{
+				menuButtonFrameCount = 0;
+			}
 
-        //if (!lastJoysticState.Menu && joystick.Menu)
-        if (menuButtonFrameCount > 60 * 1)
-        {
-            DoMenuHomeNoSave();
+			//if (!lastJoysticState.Menu && joystick.Menu)
+			if (menuButtonFrameCount > 60 * 1)
+			{
+				DoMenuHomeNoSave();
 
-            gpio_set_level(GPIO_NUM_2, 0);
-        }
+				gpio_set_level(GPIO_NUM_2, 0);
+			}
 
-        if (!ignoreMenuButton && lastJoysticState.values[ODROID_INPUT_MENU] && !joystick.values[ODROID_INPUT_MENU])
-        {
-            // Save state
-            gpio_set_level(GPIO_NUM_2, 1);
+			if (!ignoreMenuButton && lastJoysticState.values[ODROID_INPUT_MENU] && !joystick.values[ODROID_INPUT_MENU])
+			{
+				// Save state
+				gpio_set_level(GPIO_NUM_2, 1);
 
-            DoMenuHome();
+				DoMenuHome();
 
-            gpio_set_level(GPIO_NUM_2, 0);
-        }
-
-
-        if (!lastJoysticState.values[ODROID_INPUT_VOLUME] && joystick.values[ODROID_INPUT_VOLUME])
-        {
-            odroid_audio_volume_mute();
-            printf("main: Volume=%d\n", odroid_audio_volume_get());
-        }
-
-        if (joystick.values[ODROID_INPUT_VOLUME] && !lastJoysticState.values[ODROID_INPUT_UP] && joystick.values[ODROID_INPUT_UP])
-        {
-            odroid_audio_volume_increase();
-            printf("main: Volume=%d\n", odroid_audio_volume_get());
-        }
-
-        if (joystick.values[ODROID_INPUT_VOLUME] && !lastJoysticState.values[ODROID_INPUT_DOWN] && joystick.values[ODROID_INPUT_DOWN])
-        {
-            odroid_audio_volume_decrease();
-            printf("main: Volume=%d\n", odroid_audio_volume_get());
-        }
-
-        // Scaling
-        if (joystick.values[ODROID_INPUT_START] && !lastJoysticState.values[ODROID_INPUT_RIGHT] && joystick.values[ODROID_INPUT_RIGHT])
-        {
-            scaling_enabled = !scaling_enabled;
-            odroid_settings_ScaleDisabled_set(ODROID_SCALE_DISABLE_GB, scaling_enabled ? 0 : 1);
-        }
-
-		// Cycle through palets
-		if (joystick.values[ODROID_INPUT_SELECT] && !lastJoysticState.values[ODROID_INPUT_LEFT] && joystick.values[ODROID_INPUT_LEFT])
-        {
-			pal_next();
-			odroid_settings_GBPalette_set(pal_get());
-        }
-
-        if (joystick.values[ODROID_INPUT_SELECT] && !lastJoysticState.values[ODROID_INPUT_RIGHT] && joystick.values[ODROID_INPUT_RIGHT])
-        {
-            pal_previous();
-            odroid_settings_GBPalette_set(pal_get());
-        }
-
-        pad_set(PAD_UP, joystick.values[ODROID_INPUT_UP]);
-        pad_set(PAD_RIGHT, joystick.values[ODROID_INPUT_RIGHT]);
-        pad_set(PAD_DOWN, joystick.values[ODROID_INPUT_DOWN]);
-        pad_set(PAD_LEFT, joystick.values[ODROID_INPUT_LEFT]);
-
-        pad_set(PAD_SELECT, joystick.values[ODROID_INPUT_SELECT]);
-        pad_set(PAD_START, joystick.values[ODROID_INPUT_START]);
-
-        pad_set(PAD_A, joystick.values[ODROID_INPUT_A]);
-        pad_set(PAD_B, joystick.values[ODROID_INPUT_B]);
+				gpio_set_level(GPIO_NUM_2, 0);
+			}
 
 
+			if (!lastJoysticState.values[ODROID_INPUT_VOLUME] && joystick.values[ODROID_INPUT_VOLUME])
+			{
+				odroid_audio_volume_mute();
+				printf("main: Volume=%d\n", odroid_audio_volume_get());
+			}
+
+			if (joystick.values[ODROID_INPUT_VOLUME] && !lastJoysticState.values[ODROID_INPUT_UP] && joystick.values[ODROID_INPUT_UP])
+			{
+				odroid_audio_volume_increase();
+				printf("main: Volume=%d\n", odroid_audio_volume_get());
+			}
+
+			if (joystick.values[ODROID_INPUT_VOLUME] && !lastJoysticState.values[ODROID_INPUT_DOWN] && joystick.values[ODROID_INPUT_DOWN])
+			{
+				odroid_audio_volume_decrease();
+				printf("main: Volume=%d\n", odroid_audio_volume_get());
+			}
+
+			// Scaling
+			if (joystick.values[ODROID_INPUT_START] && !lastJoysticState.values[ODROID_INPUT_RIGHT] && joystick.values[ODROID_INPUT_RIGHT])
+			{
+				scaling_enabled = !scaling_enabled;
+				odroid_settings_ScaleDisabled_set(ODROID_SCALE_DISABLE_GB, scaling_enabled ? 0 : 1);
+			}
+
+			// Cycle through palets
+			if (joystick.values[ODROID_INPUT_SELECT] && !lastJoysticState.values[ODROID_INPUT_LEFT] && joystick.values[ODROID_INPUT_LEFT])
+			{
+				pal_next();
+				odroid_settings_GBPalette_set(pal_get());
+			}
+
+			if (joystick.values[ODROID_INPUT_SELECT] && !lastJoysticState.values[ODROID_INPUT_RIGHT] && joystick.values[ODROID_INPUT_RIGHT])
+			{
+				pal_previous();
+				odroid_settings_GBPalette_set(pal_get());
+			}
+
+			pad_set(PAD_UP, joystick.values[ODROID_INPUT_UP]);
+			pad_set(PAD_RIGHT, joystick.values[ODROID_INPUT_RIGHT]);
+			pad_set(PAD_DOWN, joystick.values[ODROID_INPUT_DOWN]);
+			pad_set(PAD_LEFT, joystick.values[ODROID_INPUT_LEFT]);
+
+			pad_set(PAD_SELECT, joystick.values[ODROID_INPUT_SELECT]);
+			pad_set(PAD_START, joystick.values[ODROID_INPUT_START]);
+
+			pad_set(PAD_A, joystick.values[ODROID_INPUT_A]);
+			pad_set(PAD_B, joystick.values[ODROID_INPUT_B]);
+		}
+
+		// Emulate system for one frame
         startTime = xthal_get_ccount();
         run_to_vblank();
         stopTime = xthal_get_ccount();
 
-
         lastJoysticState = joystick;
 
-
-        if (stopTime > startTime)
+		// Measure fps/speed
+        if (stopTime > startTime) {
           elapsedTime = (stopTime - startTime);
-        else
+		} else {
+			// Handle overflown cycle counter
           elapsedTime = ((uint64_t)stopTime + (uint64_t)0xffffffff) - (startTime);
+		}
 
         totalElapsedTime += elapsedTime;
         ++frame;
-        ++actualFrameCount;
 
+		// Cycle budget we can spend to emulate one frame to reach roughly 60 fps
+		const int frameTime = CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000 / 50;
+		// Figure out if we should skip next frame
+        skipFrame = (elapsedTime > frameTime);
+
+		// if (skipFrame) {
+		// 	printf("skipping frame because elapsedTime: %d\n", elapsedTime);
+		// }
+
+		// Display statistics every 60fps
+        ++actualFrameCount;
         if (actualFrameCount == 60)
         {
           float seconds = totalElapsedTime / (CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ * 1000000.0f); // 240000000.0f; // (240Mhz)
           float fps = actualFrameCount / seconds;
+
+		  // vTaskGetRunTimeStats(statsbuf);
+		  // printf("%s\n", statsbuf);
 		  
-//		  if (fps < 50.f)
-//			  bool_interlace = true;
-//		  else
-//			  bool_interlace = false;
-//
-          printf("HEAP:0x%x, FPS:%f, BATTERY:%d [%d]\n", esp_get_free_heap_size(), fps, battery_state.millivolts, battery_state.percentage);
+          printf("FPS:%f, BATTERY:%d [%d]\n", fps, battery_state.millivolts, battery_state.percentage);
 
           actualFrameCount = 0;
           totalElapsedTime = 0;

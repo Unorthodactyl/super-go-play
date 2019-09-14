@@ -957,10 +957,7 @@ void app_main(void)
         }
 
         // send audio
-
         odroid_audio_submit((short*)audioBuffer, snd.sample_count);
-
-
         stopTime = xthal_get_ccount();
 
         previousState = joystick;
