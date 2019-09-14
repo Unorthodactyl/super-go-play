@@ -125,11 +125,12 @@ void run_to_vblank()
   uint8_t *old_buffer = update->buffer;
   odroid_scanline *old_diff = update->diff;
   old_palette = update->palette;
+  fb.ptr = framebuffer;
 
   // Swap updates
   update = (update == &update1) ? &update2 : &update1;
 
-  update->buffer = framebuffer;
+  update->buffer = fb.ptr;
   update->stride = fb.pitch;
   update->palette = scan.pal3;
 
