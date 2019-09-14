@@ -19,6 +19,7 @@ struct scan
 	int wnd[64];
 	byte buf[256];
 	un16 pal2[64];
+    un16 pal3[64];
 	byte pri[256];
 	struct vissprite vs[16];
 	int ns, l, x, y, s, t, u, v, wx, wy, wt, wv;

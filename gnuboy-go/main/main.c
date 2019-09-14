@@ -53,7 +53,6 @@ uint16_t* displayBuffer[2]; //= { fb0, fb0 }; //[160 * 144];
 uint8_t currentBuffer; // index for display_buffer
 uint16_t* framebuffer; // pointer to currentBuffer
 
-uint16_t* palette = scan.pal2;
 uint16_t* old_palette = NULL;
 
 int frame = 0;
@@ -132,7 +131,7 @@ void run_to_vblank()
 
   update->buffer = framebuffer;
   update->stride = fb.pitch;
-  update->palette = scan.pal2;
+  update->palette = scan.pal3;
 
   // Diff framebuffers and send the update to video task
   // TODO: Somehow determine when to interlace properly
@@ -619,7 +618,7 @@ void app_main(void)
   	fb.dirty = 0;
     
     //load initial palette
-    update->palette = scan.pal2;
+    update->palette = scan.pal3;
 
 
     // Note: Magic number obtained by adjusting until audio buffer overflows stop.

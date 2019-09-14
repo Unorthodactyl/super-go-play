@@ -29,6 +29,7 @@ struct scan scan;
 
 
 #define PAL2 (scan.pal2)
+#define PAL3 (scan.pal3)
 
 #define VS (scan.vs) /* vissprites */
 #define NS (scan.ns)
@@ -758,7 +759,7 @@ inline static void updatepalette(int i)
 	short low = lcd.pal[i << 1];
 	short high = lcd.pal[(i << 1) | 1];
 
-	c = (high | (low << 8)) & 0x7fff;
+	c = (low | (high << 8)) & 0x7fff;
 
 	//bit 0-4 red
 	r = c & 0x1f;
@@ -770,6 +771,19 @@ inline static void updatepalette(int i)
 	b = (c >> 10) & 0x1f;
 
 	PAL2[i] = (r << 11) | (g << (5 + 1)) | (b);
+    
+    c = (low | (high << 8)) & 0x7fff;
+
+	//bit 0-4 red
+	b = c & 0x1f;
+
+	// bit 5-9 green
+	g = (c >> 5) & 0x1f;
+
+	// bit 10-14 blue
+	r = (c >> 10) & 0x1f;
+    PAL3[i] = (r << 11) | (g << (5 + 1)) | (b);
+    
 }
 
 inline void pal_write(int i, byte b)
