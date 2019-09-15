@@ -75,6 +75,7 @@ struct update_meta {
 	bool skip_frame;
 	uint8_t *buffer;
 	int stride;
+    uint16_t* palette;
 };	
 
 static struct update_meta update1 = {0,};
@@ -120,6 +121,9 @@ void run_to_vblank()
 
   /* VBLANK BEGIN */
   if (!skipFrame) {
+      struct update_meta *old_update = (update == &update1) ? &update2 : &update1;
+
+      old_update->palette = update->palette;
 	  uint8_t *old_buffer = update->buffer;
 	  odroid_scanline *old_diff = update->diff;
 
@@ -128,10 +132,13 @@ void run_to_vblank()
 
 	  update->buffer = framebuffer;
 	  update->stride = fb.pitch;
+      update->palette = scan.pal2;
+      
+
 
 	  // Diff framebuffers and send the update to video task
 	  // TODO: Somehow determine when to interlace properly
-	  odroid_buffer_diff(update->buffer, old_buffer, NULL, NULL,
+	  odroid_buffer_diff(update->buffer, old_buffer, update->palette, old_update->palette,
 			  GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
 			  update->stride, PIXEL_MASK, 0, update->diff);
 	  xQueueSend(vidQueue, &update, portMAX_DELAY);
@@ -140,6 +147,9 @@ void run_to_vblank()
 	  currentBuffer = currentBuffer ? 0 : 1;
 	  framebuffer = displayBuffer[currentBuffer];
 	  fb.ptr = framebuffer;
+      
+      //swap updates again so we don't write into what the video thread is reading when the loop runs again
+      update = (update == &update1) ? &update2 : &update1;
   }
 
   rtc_tick();
@@ -216,7 +226,7 @@ void videoTask(void *arg)
 			full_update = true;
 		}
 		ili9341_write_frame_8bit(update->buffer, full_update || update->skip_frame ? NULL : update->diff,
-				GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, scan.pal2);
+				GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, update->palette);
 
         odroid_input_battery_level_read(&battery_state);
 
@@ -516,6 +526,8 @@ void app_main(void)
 
     // Load ROM
     loader_init(NULL);
+    
+    update->palette = scan.pal2;
 
     // Clear display
     ili9341_write_frame_gb(NULL, true);
