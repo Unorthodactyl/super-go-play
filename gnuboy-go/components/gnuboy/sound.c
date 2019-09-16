@@ -66,38 +66,38 @@ rcvar_t sound_exports[] =
 };
 
 
-inline static void s1_freq_d(int d)
+inline static void IRAM_ATTR s1_freq_d(int d)
 {
 	if (RATE > (d<<4)) S1.freq = 0;
 	else S1.freq = (RATE << 17)/d;
 }
 
-inline static void s1_freq()
+inline static IRAM_ATTR void s1_freq()
 {
 	s1_freq_d(2048 - (((R_NR14&7)<<8) + R_NR13));
 }
 
-inline static void s2_freq()
+inline static void IRAM_ATTR s2_freq()
 {
 	int d = 2048 - (((R_NR24&7)<<8) + R_NR23);
 	if (RATE > (d<<4)) S2.freq = 0;
 	else S2.freq = (RATE << 17)/d;
 }
 
-inline static void s3_freq()
+inline static void IRAM_ATTR s3_freq()
 {
 	int d = 2048 - (((R_NR34&7)<<8) + R_NR33);
 	if (RATE > (d<<3)) S3.freq = 0;
 	else S3.freq = (RATE << 21)/d;
 }
 
-inline static void s4_freq()
+inline static void IRAM_ATTR s4_freq()
 {
 	S4.freq = (freqtab[R_NR43&7] >> (R_NR43 >> 4)) * RATE;
 	if (S4.freq >> 18) S4.freq = 1<<18;
 }
 
-void sound_dirty()
+void IRAM_ATTR sound_dirty()
 {
 	S1.swlen = ((R_NR10>>4) & 7) << 14;
 	S1.len = (64-(R_NR11&63)) << 13;

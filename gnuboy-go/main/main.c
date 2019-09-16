@@ -1,3 +1,5 @@
+#pragma GCC optimize ("O3")
+
 #include "freertos/FreeRTOS.h"
 #include "esp_wifi.h"
 #include "esp_system.h"
@@ -81,6 +83,7 @@ struct update_meta {
 static struct update_meta update1 = {0,};
 static struct update_meta update2 = {0,};
 static struct update_meta *update = &update2;
+static struct update_meta *old_update;
 int update_palette_dirty = true;
 
 #define AUDIO_SAMPLE_RATE (32000)
@@ -121,7 +124,7 @@ void run_to_vblank()
 
   /* VBLANK BEGIN */
   if (!skipFrame) {
-      struct update_meta *old_update = (update == &update1) ? &update2 : &update1;
+      old_update = (update == &update1) ? &update2 : &update1;
 
       old_update->palette = update->palette;
 	  uint8_t *old_buffer = update->buffer;
@@ -190,7 +193,7 @@ volatile bool videoTaskIsRunning = false;
 bool scaling_enabled = true;
 bool previous_scale_enabled = true;
 
-void videoTask(void *arg)
+void IRAM_ATTR videoTask(void *arg)
 {
   esp_err_t ret;
 
@@ -212,7 +215,7 @@ void videoTask(void *arg)
             previous_scale_enabled = scaling_enabled;
             if (scaling_enabled) {
 				// TODO: Scaling looks kinda ugly compared to old gnuboy, not sure how to fix that
-                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.f);
+                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.2f);
             } else {
                 odroid_display_reset_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT);
             }
@@ -585,13 +588,13 @@ void app_main(void)
   	fb.indexed = 0;
   	fb.ptr = framebuffer;
   	fb.enabled = 1;
-  	fb.dirty = 0;
+  	fb.dirty = 1;
 
 
     // Note: Magic number obtained by adjusting until audio buffer overflows stop.
     const int audioBufferLength = AUDIO_SAMPLE_RATE / 10 + 1;
     //printf("CHECKPOINT AUDIO: HEAP:0x%x - allocating 0x%x\n", esp_get_free_heap_size(), audioBufferLength * sizeof(int16_t) * 2 * 2);
-    const int AUDIO_BUFFER_SIZE = audioBufferLength * sizeof(int16_t) * 2;
+    const int AUDIO_BUFFER_SIZE = audioBufferLength * sizeof(int16_t) * 1;
 
     // pcm.len = count of 16bit samples (x2 for stereo)
     memset(&pcm, 0, sizeof(pcm));
