@@ -3,7 +3,8 @@
 
 ## About
 
-Super Go-Play is a combination of two other Go-Play forks [(more info here)](https://forum.odroid.com/viewtopic.php?f=159&p=248618), plus the following changes:
+Experimental fork of Super-Go-Play that adds partial updates to gnuboy-go
+Brought to you by the hard work/dirty hacks of Paspartout & Unorthodactyl 
 
 - New in-game `VOLUME` button behavior (details below)
 - New hour glass icon
@@ -25,9 +26,6 @@ The full changes compared to Go-Play are:
 - New name, logo and firmware tile image
 - Quiet version with reduced volume levels from "go-play-quiet"
 
-## Download
-
-- [Latest release is here](https://github.com/mattkj/super-go-play/releases/tag/v1.0.0)
 
 ## Installation
 
