@@ -39,3 +39,4 @@ The full changes compared to Go-Play are:
 - [@gentleben](https://github.com/gentleben/go-play) for original MENU button change
 - [@milesoberstadt](https://github.com/milesoberstadt/go-play-quiet) for "go-play-quiet"
 - [@23pieces](https://github.com/23pieces/Odroid-Go-Tools) for "Odroid-Go-Tools"
+- [@mattkj](https://github.com/mattkj/super-go-play) for "Super Go-Play"
