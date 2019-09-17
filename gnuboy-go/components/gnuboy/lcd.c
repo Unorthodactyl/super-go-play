@@ -775,7 +775,7 @@ inline static void updatepalette(int i)
 	PAL2[i] = (r << 11) | (g << (5 + 1)) | (b);
 }
 
-inline void pal_write(int i, byte b)
+inline void IRAM_ATTR pal_write(int i, byte b)
 {
 	if (lcd.pal[i] != b)
 	{
@@ -806,7 +806,7 @@ void IRAM_ATTR pal_write_dmg(int i, int mapnum, byte d)
 		pal_write(i+j, c & 0xff);
 		pal_write(i+j+1, c >> 8);
 	}
-
+    hasPaletteUpdate = true;
 	/* printf("pal_write_dmg: i=%d, d=0x%x\n", i , d); */
 }
 
