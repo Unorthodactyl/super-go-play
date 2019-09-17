@@ -84,7 +84,7 @@ static struct update_meta update1 = {0,};
 static struct update_meta update2 = {0,};
 static struct update_meta *update = &update2;
 static struct update_meta *old_update;
-int update_palette_dirty = true;
+//int update_palette_dirty = true;
 
 #define AUDIO_SAMPLE_RATE (32000)
 
@@ -141,9 +141,10 @@ void run_to_vblank()
 
 	  // Diff framebuffers and send the update to video task
 	  // TODO: Somehow determine when to interlace properly
-	  odroid_buffer_diff(update->buffer, old_buffer, update->palette, old_update->palette,
-			  GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
-			  update->stride, PIXEL_MASK, 0, update->diff);
+	  odroid_buffer_diff(update->buffer, old_buffer, hasPaletteUpdate ? update->palette : NULL, 
+      hasPaletteUpdate ? old_update->palette : NULL,
+      GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
+      update->stride, PIXEL_MASK, 0, update->diff);
 	  xQueueSend(vidQueue, &update, portMAX_DELAY);
 
 	  // Swap framebuffers
@@ -199,6 +200,7 @@ void IRAM_ATTR videoTask(void *arg)
 
   videoTaskIsRunning = true;
   struct update_meta *update = NULL;
+  uint16_t display_palette[64] = {0, };
 
   while(1)
   {
@@ -215,21 +217,33 @@ void IRAM_ATTR videoTask(void *arg)
             previous_scale_enabled = scaling_enabled;
             if (scaling_enabled) {
 				// TODO: Scaling looks kinda ugly compared to old gnuboy, not sure how to fix that
-                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.2f);
-            } else {
                 odroid_display_reset_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT);
+            } else {
+                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.2f);
             }
         }
 		
 		// TODO: For palette diffing scan.pal2 probably needs to get changed
 		//       to a buffered thing. Maybe change update_meta to contain a the palette?
 		bool full_update = scale_changed;
-		if (update_palette_dirty) {
-			update_palette_dirty = 0;
-			full_update = true;
-		}
+		//if (update_palette_dirty) {
+		//	update_palette_dirty = 0;
+		//	full_update = true;
+		//}
+        
+        //borrowed from Paspartout's fork
+        if (hasPaletteUpdate)
+        {
+            for(int i = 0; i < PIXEL_MASK+1; i++) {
+            const uint16_t pix = update->palette[i];
+            display_palette[i] =  pix << 8 | pix >> 8;
+            }
+            hasPaletteUpdate = false;
+        }
+        
+        
 		ili9341_write_frame_8bit(update->buffer, full_update || update->skip_frame ? NULL : update->diff,
-				GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, update->palette);
+				GAMEBOY_WIDTH, GAMEBOY_HEIGHT, fb.pitch, PIXEL_MASK, display_palette);
 
         odroid_input_battery_level_read(&battery_state);
 
@@ -533,7 +547,7 @@ void app_main(void)
     update->palette = scan.pal2;
 
     // Clear display
-    ili9341_write_frame_gb(NULL, true);
+    ili9341_blank_screen();
 
     // Audio hardware
     odroid_audio_init(odroid_settings_AudioSink_get(), AUDIO_SAMPLE_RATE);
@@ -620,7 +634,9 @@ void app_main(void)
     // Load state
     LoadState(rom.name);
 
-
+    //set initial scaling
+    odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.2f);
+    
     uint startTime;
     uint stopTime;
     uint totalElapsedTime = 0;

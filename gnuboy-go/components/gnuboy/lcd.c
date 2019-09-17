@@ -73,8 +73,9 @@ static int current_palette = 1;
 static int nr_of_palettes = 8;
 
 // Imorted from main.c
-extern int update_palette_dirty;
+//extern int update_palette_dirty;
 extern int skipFrame;
+extern bool hasPaletteUpdate = true;
 					
 static int sprsort = 1;
 static int sprdebug = 0;
@@ -781,6 +782,7 @@ inline void pal_write(int i, byte b)
 		lcd.pal[i] = b;
 		updatepalette(i>>1);
 	}
+    hasPaletteUpdate = true;
 }
 
 void IRAM_ATTR pal_write_dmg(int i, int mapnum, byte d)
@@ -876,7 +878,7 @@ void pal_dirty()
 			updatepalette(i);
 		}
 	}
-	update_palette_dirty = 1;
+	//update_palette_dirty = 1;
 }
 
 void lcd_reset()

@@ -886,10 +886,9 @@ write_rect(uint8_t *buffer, uint16_t *palette,
         {
             for (int x = 0, x_acc = ix_acc; x < width;)
             {
-				uint16_t pix = palette[buffer[bufferIndex + x] & pixel_mask];
-				// TODO: Should probably do endian swap beforehand on a copy of the palette
-				// to save some cycles
-                line_buffer[line_buffer_index++] = (pix >> 8) | (pix << 8);
+
+                line_buffer[line_buffer_index++] =
+                  palette[buffer[bufferIndex + x] & pixel_mask];
 
                 x_acc += x_inc;
                 while (x_acc >= SCREEN_WIDTH) {

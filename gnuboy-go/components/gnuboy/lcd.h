@@ -1,6 +1,9 @@
 #ifndef __LCD_H__
 #define __LCD_H__
 
+#include "stdbool.h"
+extern bool hasPaletteUpdate;
+
 #include "defs.h"
 
 struct vissprite
