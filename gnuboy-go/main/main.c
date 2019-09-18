@@ -124,19 +124,15 @@ void run_to_vblank()
 
   /* VBLANK BEGIN */
   if (!skipFrame) {
-      old_update = (update == &update1) ? &update2 : &update1;
-
-	  old_update = update;
+      old_update = update;
 	  
-
-	  // Swap updates
+      // Swap updates
 	  update = (update == &update1) ? &update2 : &update1;
 
 	  update->buffer = framebuffer;
 	  update->stride = fb.pitch;
       memcpy(update->palette, scan.pal2, 64 * sizeof(uint16_t));
       
-	  
 	  // Diff framebuffers and send the update to video task
 	  // TODO: Somehow determine when to interlace properly
 	  odroid_buffer_diff(update->buffer, old_update->buffer, 
@@ -146,12 +142,12 @@ void run_to_vblank()
       update->stride, PIXEL_MASK, 0, update->diff);
 	  xQueueSend(vidQueue, &update, portMAX_DELAY);
 	  
-
-	  // Swap framebuffers
+      // Swap framebuffers
 	  currentBuffer = currentBuffer ? 0 : 1;
 	  framebuffer = displayBuffer[currentBuffer];
 	  fb.ptr = framebuffer;
 
+      //flip update queue again
       update = (update == &update1) ? &update2 : &update1;
   }
   rtc_tick();
