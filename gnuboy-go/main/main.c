@@ -124,11 +124,8 @@ void run_to_vblank()
 
   /* VBLANK BEGIN */
   if (!skipFrame) {
-      old_update = update;
+      old_update = (update == &update1) ? &update2 : &update1;
 	  
-      // Swap updates
-	  update = (update == &update1) ? &update2 : &update1;
-
 	  update->buffer = framebuffer;
 	  update->stride = fb.pitch;
       memcpy(update->palette, scan.pal2, 64 * sizeof(uint16_t));
@@ -147,7 +144,7 @@ void run_to_vblank()
 	  framebuffer = displayBuffer[currentBuffer];
 	  fb.ptr = framebuffer;
 
-      //flip update queue again
+      //flip update queue
       update = (update == &update1) ? &update2 : &update1;
   }
   rtc_tick();
