@@ -151,8 +151,9 @@ void run_to_vblank()
 	  currentBuffer = currentBuffer ? 0 : 1;
 	  framebuffer = displayBuffer[currentBuffer];
 	  fb.ptr = framebuffer;
-  }
 
+      update = (update == &update1) ? &update2 : &update1;
+  }
   rtc_tick();
   sound_mix();
 
