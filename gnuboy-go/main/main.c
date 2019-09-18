@@ -77,7 +77,7 @@ struct update_meta {
 	bool skip_frame;
 	uint8_t *buffer;
 	int stride;
-    uint16_t* palette;
+    uint16_t palette[64 * 2];
 };	
 
 static struct update_meta update1 = {0,};
@@ -126,34 +126,31 @@ void run_to_vblank()
   if (!skipFrame) {
       old_update = (update == &update1) ? &update2 : &update1;
 
-      old_update->palette = update->palette;
-	  uint8_t *old_buffer = update->buffer;
-	  odroid_scanline *old_diff = update->diff;
+	  old_update = update;
+	  
 
 	  // Swap updates
 	  update = (update == &update1) ? &update2 : &update1;
 
 	  update->buffer = framebuffer;
 	  update->stride = fb.pitch;
-      update->palette = scan.pal2;
+      memcpy(update->palette, scan.pal2, 64 * sizeof(uint16_t));
       
-
-
+	  
 	  // Diff framebuffers and send the update to video task
 	  // TODO: Somehow determine when to interlace properly
-	  odroid_buffer_diff(update->buffer, old_buffer, hasPaletteUpdate ? update->palette : NULL, 
+	  odroid_buffer_diff(update->buffer, old_update->buffer, 
+	  hasPaletteUpdate ? update->palette : NULL, 
       hasPaletteUpdate ? old_update->palette : NULL,
       GAMEBOY_WIDTH, GAMEBOY_HEIGHT,
       update->stride, PIXEL_MASK, 0, update->diff);
 	  xQueueSend(vidQueue, &update, portMAX_DELAY);
+	  
 
 	  // Swap framebuffers
 	  currentBuffer = currentBuffer ? 0 : 1;
 	  framebuffer = displayBuffer[currentBuffer];
 	  fb.ptr = framebuffer;
-      
-      //swap updates again so we don't write into what the video thread is reading when the loop runs again
-      update = (update == &update1) ? &update2 : &update1;
   }
 
   rtc_tick();
@@ -217,7 +214,7 @@ void IRAM_ATTR videoTask(void *arg)
             previous_scale_enabled = scaling_enabled;
             if (scaling_enabled) {
 				// TODO: Scaling looks kinda ugly compared to old gnuboy, not sure how to fix that
-                odroid_display_reset_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT);
+                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.0f);
             } else {
                 odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.2f);
             }
@@ -231,9 +228,9 @@ void IRAM_ATTR videoTask(void *arg)
 		//	full_update = true;
 		//}
         
-        //borrowed from Paspartout's fork
         if (hasPaletteUpdate)
         {
+			//borrowed from Paspartout's fork
             for(int i = 0; i < PIXEL_MASK+1; i++) {
             const uint16_t pix = update->palette[i];
             display_palette[i] =  pix << 8 | pix >> 8;
@@ -544,7 +541,6 @@ void app_main(void)
     // Load ROM
     loader_init(NULL);
     
-    update->palette = scan.pal2;
 
     // Clear display
     ili9341_blank_screen();
