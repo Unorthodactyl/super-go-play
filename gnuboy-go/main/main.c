@@ -215,7 +215,7 @@ void IRAM_ATTR videoTask(void *arg)
             previous_scale_enabled = scaling_enabled;
             if (scaling_enabled) {
 				// TODO: Scaling looks kinda ugly compared to old gnuboy, not sure how to fix that
-                odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.0f);
+                odroid_display_reset_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT);
             } else {
                 odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.2f);
             }
