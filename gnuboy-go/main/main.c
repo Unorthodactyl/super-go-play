@@ -29,6 +29,7 @@
 #include "../components/gnuboy/regs.h"
 #include "../components/gnuboy/rtc.h"
 #include "../components/gnuboy/gnuboy.h"
+#include "../components/gnuboy/dmgpal.h"
 
 #include <string.h>
 
@@ -399,7 +400,6 @@ static void LoadState(const char* cartName)
         }
     }
 
-	pal_set(odroid_settings_GBPalette_get());
     Volume = odroid_settings_Volume_get();
 }
 
@@ -627,6 +627,12 @@ void app_main(void)
     //set initial scaling
     odroid_display_set_scale(GAMEBOY_WIDTH, GAMEBOY_HEIGHT, 1.2f);
     
+    // Update DMG color palette
+    printf("dmgpal: loaded palette %d\n", dmg_cur_pal);
+    if (!hw.cgb && dmg_color && dmg_cur_pal < 13)
+        dmg_pal_update(dmg_cur_pal);
+
+
     uint startTime;
     uint stopTime;
     uint totalElapsedTime = 0;
@@ -712,18 +718,11 @@ void app_main(void)
 				odroid_settings_ScaleDisabled_set(ODROID_SCALE_DISABLE_GB, scaling_enabled ? 0 : 1);
 			}
 
-			// Cycle through palets
-			if (joystick.values[ODROID_INPUT_SELECT] && !lastJoysticState.values[ODROID_INPUT_LEFT] && joystick.values[ODROID_INPUT_LEFT])
-			{
-				pal_next();
-				odroid_settings_GBPalette_set(pal_get());
-			}
-
-			if (joystick.values[ODROID_INPUT_SELECT] && !lastJoysticState.values[ODROID_INPUT_RIGHT] && joystick.values[ODROID_INPUT_RIGHT])
-			{
-				pal_previous();
-				odroid_settings_GBPalette_set(pal_get());
-			}
+            // DMG color palette cycling
+            if (!hw.cgb && dmg_color && joystick.values[ODROID_INPUT_START] && !lastJoysticState.values[ODROID_INPUT_LEFT] && joystick.values[ODROID_INPUT_LEFT])
+            {
+                dmg_pal_cycle();
+            }
 
 			pad_set(PAD_UP, joystick.values[ODROID_INPUT_UP]);
 			pad_set(PAD_RIGHT, joystick.values[ODROID_INPUT_RIGHT]);
