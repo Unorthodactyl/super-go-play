@@ -13,6 +13,7 @@
 #include "rtc.h"
 #include "mem.h"
 #include "sound.h"
+#include "dmgpal.h"
 
 
 
@@ -64,6 +65,8 @@ struct svar svars[] =
 	I1("pad ", &hw.pad),
 	I4("cgb ", &hw.cgb),
 	I4("gba ", &hw.gba),
+
+	I1("cpal", &dmg_cur_pal),
 
 	I4("mbcm", &mbc.model),
 	I4("romb", &mbc.rombank),

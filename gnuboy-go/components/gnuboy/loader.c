@@ -26,6 +26,7 @@
 #include "rtc.h"
 #include "rc.h"
 #include "sound.h"
+#include "dmgpal.h"
 
 #include "../odroid/odroid_settings.h"
 #include "../odroid/odroid_sdcard.h"
@@ -375,6 +376,9 @@ int rom_load()
 	c = tmp >> 24;
 	hw.cgb = ((c == 0x80) || (c == 0xc0)) && !forcedmg;
 	hw.gba = (hw.cgb && gbamode);
+
+	if (!hw.cgb && dmg_color)
+		dmg_pal_set();
 
 	return 0;
 }
